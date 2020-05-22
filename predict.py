@@ -2,12 +2,15 @@ import re
 import joblib
 import tkinter as tk
 from tkinter import *
-import pandas as pd
-import matplotlib.pyplot as plt
-
+import spacy
+import string
+from spacy.lang.en.stop_words import STOP_WORDS
+from spacy.lang.en import English
+from sklearn.base import TransformerMixin, BaseEstimator
 
 jl = joblib.load('logreg_binary')  # Logistic regression for binary classification (propaganda/non-propaganda)
 jl_multiClass = joblib.load('multiclass_logreg')  # Logistic regression for multi Class  (14 classes)
+#jl_fragment = joblib.load('logReg_fragment_word')
 
 
 class Prediction:
@@ -19,7 +22,7 @@ class Prediction:
 
     def predict_sentence(self):
         propaganda_list = []
-        raw_text = self.text.replace("\n", "")
+        raw_text = self.text  # replace("\n", "")
         vector = re.split("[?.!]", raw_text)
         for sentence in vector:
             response = self.jl.predict([sentence])
@@ -45,21 +48,18 @@ class Prediction:
         for sentence in list_of_propaganda:
             listOfFragments = []
             sentenceList = sentence.split()
-            if len(sentenceList) <= 3:
-                longest_sequence.append(sentence)
-            else:
-                for n in range(2, len(sentenceList) - 1):
-                    grams = [sentenceList[i:i + n] for i in range(len(sentenceList) - n + 1)]
-                    for gram in grams:
-                        candidate = " ".join(gram)
-                        response = self.jl.predict([candidate])
-                        if response == "propaganda":
-                            listOfFragments.append(candidate)
-
-                list_of_spans.append(listOfFragments)
+            for n in range(0, len(sentenceList) - 1):
+                grams = [sentenceList[i:i + n] for i in range(len(sentenceList) - n + 1)]
+                for gram in grams:
+                    candidate = " ".join(gram)
+                    response = self.jl.predict([candidate])
+                    if response == "propaganda":
+                        listOfFragments.append(candidate)
+            list_of_spans.append(listOfFragments)
 
         for fragments in list_of_spans:
-            longest_sequence.append(max(fragments, key=len))
+            if fragments:
+                longest_sequence.append(max(fragments, key=len))
 
         return longest_sequence
 
@@ -83,8 +83,6 @@ class Prediction:
         cleaned_text = replaceBySpace.sub(' ', self.text)
         post = badSymbols.sub('', cleaned_text)
         return post
-
-
 
 
 class CustomText(tk.Text):
@@ -128,3 +126,35 @@ class CustomText(tk.Text):
         self.tag_config("Black-and-White_Fallacy", background="plum2")
         self.tag_config("Whataboutism,Straw_Men,Red_Herring", background="burlywood1")
         self.tag_config("Bandwagon,Reductio_ad_hitlerum", background="cyan3")
+
+
+punctuations = string.punctuation  # list of punctuation marks
+
+stop_words = spacy.lang.en.stop_words.STOP_WORDS  # list of stop words
+
+parser = English()  # english parser
+
+
+# fucntion for tokenization, lemmatization, lowercasing, striping white space
+def tokenizer(sentence):
+    tokens = parser(sentence)
+    tokens = [word.lemma_.lower().strip() if word.lemma_ != "-PRON-" else word.lower_ for word in tokens]
+    tokens = [word for word in tokens if word not in stop_words and word not in punctuations]
+
+    # return list of tokens
+    return tokens
+
+
+class Predictors(TransformerMixin):
+    def transform(self, X, **transform_params):
+        # Cleaning Text
+        return [clean_text(text) for text in X]
+
+    def fit(self, X, y=None, **fit_params):
+        return self
+
+    def get_params(self, deep=True):
+        return {}
+
+def clean_text(text):
+    return text.strip().lower()
